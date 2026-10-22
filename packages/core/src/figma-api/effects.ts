@@ -70,7 +70,8 @@ const effectsSchema = v.array(effectSchema)
 /** An effect as Figma's plugin API reads and writes it (`Effect` in `@figma/plugin-typings`). */
 export type FigmaEffect = v.InferOutput<typeof effectSchema>
 
-function issuePath(issue: v.BaseIssue<unknown>): string {
+/** Where an issue sits in the value, as `[0].offset.x`, for a message naming the property. */
+export function issuePath(issue: v.BaseIssue<unknown>): string {
   return (issue.path ?? [])
     .map((item) => (typeof item.key === 'number' ? `[${item.key}]` : `.${String(item.key)}`))
     .join('')

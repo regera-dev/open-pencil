@@ -1,14 +1,21 @@
+import * as v from 'valibot'
+
 import {
   newStrokeGeometry,
   resolvedPaintBindings,
   type Color,
   type Fill,
   type GradientStop,
+  type GradientTransform,
   type SceneNode,
   type Stroke
 } from '@open-pencil/scene-graph'
 import { normalizeColor } from '@open-pencil/scene-graph/color'
 import { copyFills, copyStrokes } from '@open-pencil/scene-graph/copy'
+import {
+  gradientTransformSchema,
+  type GradientTransformInput
+} from '@open-pencil/scene-graph/gradient'
 
 import {
   graph,
@@ -18,7 +25,12 @@ import {
   type NodeProxyInternals,
   type ProxyThis
 } from '#core/figma-api/accessor-utils'
-import { parseFigmaEffects, toFigmaEffect, type FigmaEffect } from '#core/figma-api/effects'
+import {
+  issuePath,
+  parseFigmaEffects,
+  toFigmaEffect,
+  type FigmaEffect
+} from '#core/figma-api/effects'
 import { getTextStyle } from '#core/figma-api/text/style'
 import {
   paintBindings,
@@ -63,17 +75,46 @@ function paintDefaults(paint: Partial<Pick<Fill, 'opacity' | 'visible'>>) {
 type FigmaColor = Omit<Color, 'a'> & Partial<Pick<Color, 'a'>>
 
 /**
- * A paint as Figma's plugin API takes it: RGB colours, optional opacity and visibility, and the
- * variable its colour is bound to.
+ * A paint as Figma's plugin API takes it: RGB colours, optional opacity and visibility, a
+ * gradient transform as the matrix fields or as the API's `Transform` rows, and the variable its
+ * colour is bound to.
  */
-export type FigmaPaint = Omit<Fill, 'color' | 'opacity' | 'visible' | 'gradientStops'> &
+export type FigmaPaint = Omit<
+  Fill,
+  'color' | 'opacity' | 'visible' | 'gradientStops' | 'gradientTransform'
+> &
   Partial<Pick<Fill, 'opacity' | 'visible'>> & {
     color?: FigmaColor
     gradientStops?: Array<Omit<GradientStop, 'color'> & { color: FigmaColor }>
+    gradientTransform?: GradientTransformInput
     boundVariables?: { color?: FigmaVariableAlias }
   }
 
-export function figmaPaintToFill({ boundVariables: _bound, ...fill }: FigmaPaint): Fill {
+/** A stroke as Figma's plugin API takes it: a paint, with the geometry fields optional. */
+type FigmaStrokePaint = FigmaPaint & Partial<Omit<Stroke, keyof Fill>>
+
+function parseGradientTransform(
+  value: unknown,
+  property: string,
+  index: number
+): GradientTransform {
+  const result = v.safeParse(gradientTransformSchema, value)
+  if (result.success) return result.output
+  const [issue] = result.issues
+  throw new Error(
+    `Property "${property}" failed validation: ${issue.message} at [${index}].gradientTransform${issuePath(issue)}`
+  )
+}
+
+/**
+ * `fill` as the scene graph stores it. `property` and `index` name the paint when a value is
+ * refused, as Figma's setters do: `Property "fills" failed validation: … at [0].gradientTransform`.
+ */
+export function figmaPaintToFill(
+  { boundVariables: _bound, ...fill }: FigmaPaint,
+  property: string,
+  index: number
+): Fill {
   return {
     ...fill,
     ...paintDefaults(fill),
@@ -81,7 +122,11 @@ export function figmaPaintToFill({ boundVariables: _bound, ...fill }: FigmaPaint
     gradientStops: fill.gradientStops?.map((stop) => ({
       ...stop,
       color: normalizeColor(stop.color)
-    }))
+    })),
+    gradientTransform:
+      fill.gradientTransform === undefined
+        ? undefined
+        : parseGradientTransform(fill.gradientTransform, property, index)
   }
 }
 
@@ -109,7 +154,7 @@ export function installVisualNodeProxyAccessors(
       },
       set(this: ProxyThis, value: readonly FigmaPaint[]) {
         const node = raw(this, internals)
-        const fills = value.map(figmaPaintToFill)
+        const fills = value.map((paint, index) => figmaPaintToFill(paint, 'fills', index))
         updateNode(
           this,
           internals,
@@ -131,23 +176,15 @@ export function installVisualNodeProxyAccessors(
       },
       // Figma paints carry no geometry; a stroke takes the node's weight and alignment, which
       // outlast its strokes.
-      set(
-        this: ProxyThis,
-        value: readonly (Omit<Stroke, 'weight' | 'align'> &
-          Partial<Pick<Stroke, 'weight' | 'align'>> & {
-            boundVariables?: { color?: FigmaVariableAlias }
-          })[]
-      ) {
+      set(this: ProxyThis, value: readonly FigmaStrokePaint[]) {
         const owner = strokeOwner(this, internals)
         const geometry = newStrokeGeometry(raw(owner, internals))
         // The script keeps its paint objects; the node gets its own copies of every nested value.
         const strokes = copyStrokes(
-          value.map(({ boundVariables: _bound, ...stroke }) => ({
-            ...stroke,
-            ...paintDefaults(stroke),
+          value.map((stroke, index) => ({
+            ...figmaPaintToFill(stroke, 'strokes', index),
             weight: stroke.weight ?? geometry.weight,
-            align: stroke.align ?? geometry.align,
-            color: normalizeColor(stroke.color)
+            align: stroke.align ?? geometry.align
           }))
         )
         const kept = newStrokeGeometry({

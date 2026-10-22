@@ -1,11 +1,14 @@
 import { describe, expect, test } from 'bun:test'
 
+import * as v from 'valibot'
+
 import {
   DEFAULT_GRADIENT_TRANSFORM,
   IDENTITY_GRADIENT_TRANSFORM,
   defaultGradientStops,
   ellipticalGradientTransform,
   gradientPoint,
+  gradientTransformSchema,
   invertGradientTransform,
   linearGradientTransform
 } from '@open-pencil/scene-graph/gradient'
@@ -51,5 +54,46 @@ describe('gradient paints in Figma convention', () => {
       Math.round((c ?? 0) * 255)
     )
     expect(hex).toEqual([0x99, 0x2e, 0x1f])
+  })
+})
+
+// Figma's plugin API writes a Transform as two rows, [[m00, m01, m02], [m10, m11, m12]], the way
+// relativeTransform reads back; its default gradient is [[0, 1, 0], [-1, 0, 1]].
+describe('a gradient transform read from a script', () => {
+  test("maps Figma's rows onto the matrix fields", () => {
+    const rows = [
+      [0, 1, 0],
+      [-1, 0, 1]
+    ]
+    expect(v.parse(gradientTransformSchema, rows)).toEqual(DEFAULT_GRADIENT_TRANSFORM)
+  })
+
+  test('keeps the matrix fields and drops any other', () => {
+    const t = { m00: 2, m01: 0.3, m02: -0.2, m10: -0.4, m11: 1.5, m12: 0.1 }
+    expect(v.parse(gradientTransformSchema, { ...t, extra: 1 })).toEqual(t)
+  })
+
+  test.each([
+    ['a string', 'x'],
+    ['one row', [[0, 1, 0]]],
+    [
+      'a short row',
+      [
+        [0, 1],
+        [-1, 0, 1]
+      ]
+    ],
+    ['a missing field', { m00: 1, m01: 0, m02: 0, m10: 0, m11: 1 }],
+    ['a field that is not a number', { ...IDENTITY_GRADIENT_TRANSFORM, m02: '0' }],
+    ['NaN', { ...IDENTITY_GRADIENT_TRANSFORM, m02: Number.NaN }],
+    [
+      'Infinity',
+      [
+        [Number.POSITIVE_INFINITY, 0, 0],
+        [0, 1, 0]
+      ]
+    ]
+  ])('refuses %s', (_, value) => {
+    expect(v.safeParse(gradientTransformSchema, value).success).toBe(false)
   })
 })

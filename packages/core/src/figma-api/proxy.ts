@@ -335,7 +335,8 @@ export class FigmaNodeProxy {
   }
 
   set backgrounds(value: readonly FigmaPaint[]) {
-    setPageBackgrounds(this[INTERNAL_GRAPH], this._raw(), value.map(figmaPaintToFill))
+    const backgrounds = value.map((paint, index) => figmaPaintToFill(paint, 'backgrounds', index))
+    setPageBackgrounds(this[INTERNAL_GRAPH], this._raw(), backgrounds)
   }
 
   /** The async form Figma requires in dynamic-page mode; same result as mainComponent. */

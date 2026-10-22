@@ -13,7 +13,11 @@ import {
 } from '@open-pencil/scene-graph'
 import { colorToFill, parseColor } from '@open-pencil/scene-graph/color'
 import { TRANSPARENT } from '@open-pencil/scene-graph/constants'
-import { IDENTITY_GRADIENT_TRANSFORM } from '@open-pencil/scene-graph/gradient'
+import {
+  gradientTransformSchema,
+  IDENTITY_GRADIENT_TRANSFORM,
+  type GradientTransformInput
+} from '@open-pencil/scene-graph/gradient'
 import type { Color } from '@open-pencil/scene-graph/primitives'
 
 import { parseScriptInput } from './validation'
@@ -28,7 +32,8 @@ export interface SolidPaintOptions {
 }
 
 export interface GradientPaintOptions extends SolidPaintOptions {
-  transform?: GradientTransform
+  /** Figma's `gradientTransform`, as its matrix fields or the plugin API's `[[a, b, c], [d, e, f]]`. */
+  transform?: GradientTransformInput
 }
 
 const colorSchema = v.union([
@@ -60,6 +65,14 @@ function parseStops(type: GradientType, stops: unknown): PaintStop[] {
     `${GRADIENT_HELPERS[type]}() expects an array of stops, such as [['#3b82f6', 0], ['#8b5cf6', 1]]`,
     stopsSchema,
     stops
+  )
+}
+
+function parseTransform(type: GradientType, transform: unknown): GradientTransform {
+  return parseScriptInput(
+    `${GRADIENT_HELPERS[type]}() expects a transform as { m00, m01, m02, m10, m11, m12 } or Figma's [[a, b, c], [d, e, f]], such as [[0, 1, 0], [-1, 0, 1]]`,
+    gradientTransformSchema,
+    transform
   )
 }
 
@@ -96,7 +109,10 @@ export function gradient(
     visible: options.visible ?? true,
     blendMode: options.blendMode,
     gradientStops: parseStops(type, stops).map(toStop),
-    gradientTransform: options.transform ?? { ...IDENTITY_GRADIENT_TRANSFORM }
+    gradientTransform:
+      options.transform === undefined
+        ? { ...IDENTITY_GRADIENT_TRANSFORM }
+        : parseTransform(type, options.transform)
   }
 }
 

@@ -1,3 +1,5 @@
+import * as v from 'valibot'
+
 import type { Color, Vector } from './primitives'
 import type { Fill, GradientStop, GradientTransform } from './types'
 
@@ -45,6 +47,41 @@ export const DEFAULT_GRADIENT_TRANSFORM: GradientTransform = {
   m11: 0,
   m12: 1
 }
+
+/** Figma's plugin-API `Transform`: the matrix as two rows, `[[m00, m01, m02], [m10, m11, m12]]`. */
+export type GradientTransformRows = readonly [
+  readonly [number, number, number],
+  readonly [number, number, number]
+]
+
+/** A `gradientTransform` as a script may write it: the matrix fields, or Figma's rows. */
+export type GradientTransformInput = GradientTransform | GradientTransformRows
+
+const finite = v.pipe(v.number(), v.finite())
+const row = v.tuple([finite, finite, finite])
+
+/**
+ * Reads a `gradientTransform` a script wrote in either form into the matrix fields, so that
+ * everything past the boundary reads one shape; CanvasKit builds no shader from anything else.
+ */
+export const gradientTransformSchema = v.union(
+  [
+    v.object({ m00: finite, m01: finite, m02: finite, m10: finite, m11: finite, m12: finite }),
+    v.pipe(
+      v.tuple([row, row]),
+      v.transform(([[m00, m01, m02], [m10, m11, m12]]): GradientTransform => ({
+        m00,
+        m01,
+        m02,
+        m10,
+        m11,
+        m12
+      }))
+    )
+  ],
+  (issue) =>
+    `Expected { m00, m01, m02, m10, m11, m12 } or [[a, b, c], [d, e, f]] but received ${issue.received}`
+)
 
 /** How dark a new gradient's second stop is next to the fill colour, as in Figma. */
 const DEFAULT_GRADIENT_SHADE = 0.6

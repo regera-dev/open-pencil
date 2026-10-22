@@ -182,7 +182,7 @@ function fillsFromPaints(method: string, value: unknown): CharacterStyleOverride
     const problem = paintProblem(paint, index)
     if (problem) throw invalid(method, problem)
   }
-  return (value as FigmaPaint[]).map(figmaPaintToFill)
+  return (value as FigmaPaint[]).map((paint, index) => figmaPaintToFill(paint, 'value', index))
 }
 
 /**
@@ -220,7 +220,7 @@ function decorationColorFills(method: string, value: unknown): Fill[] {
     // A solid paint whose channels are out of range fails on them alone.
     const problem = solidPaintProblem(color as { color?: unknown; opacity?: unknown }, '.value')
     if (problem) throw invalid(method, problem, 'textDecorationColor')
-    return [figmaPaintToFill(color as FigmaPaint)]
+    return [figmaPaintToFill(color as FigmaPaint, 'textDecorationColor', 0)]
   }
   const paintIssues =
     issues.length === 1
