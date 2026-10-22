@@ -1,0 +1,1 @@
+- A gradient's `transform` in design JSX and `gradientTransform` in a script's paints take Figma's `[[a, b, c], [d, e, f]]` rows as well as the matrix fields, and any other shape is refused with a message naming both.
